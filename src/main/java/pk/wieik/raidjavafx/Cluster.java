@@ -201,13 +201,6 @@ public class Cluster {
             }
             // Set the recovered bit based on parity
             Bit bit = new Bit(parityBit);
-//            Result result = adjustSkipIndex(skipIndex, numberOfDiscs, decrementing);
-//            skipIndex = result.skipIndex;
-//            decrementing = result.decrementing;
-//            int adjustedSkipIndex = (skipIndex+1)%numberOfDiscs;
-//            if (adjustedSkipIndex == discIndex) {
-//                bit.setParityBit(true);
-//            }
             recoveredData.add(bit);
         }
 
