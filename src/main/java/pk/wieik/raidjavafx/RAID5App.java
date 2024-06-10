@@ -16,13 +16,18 @@ import javafx.scene.shape.Rectangle;
 import javafx.scene.text.Text;
 import javafx.stage.Stage;
 
-import java.util.ArrayList;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.List;
 
 public class RAID5App extends Application {
 
     private TextField inputDataField;
     private TextField numOfDiscsField;
+    private TextField inputFilePathField;
+    private TextField outputFilePathField;
     private VBox discContainer;
     private List<List<Bit>> listOfDiscs;
 
@@ -44,27 +49,44 @@ public class RAID5App extends Application {
         Label inputDataLabel = new Label("Input Data:");
         GridPane.setConstraints(inputDataLabel, 0, 0);
         inputDataField = new TextField();
+        inputDataField.setMinWidth(300);
         GridPane.setConstraints(inputDataField, 1, 0);
 
         Label numOfDiscsLabel = new Label("Number of Discs:");
         GridPane.setConstraints(numOfDiscsLabel, 0, 1);
         numOfDiscsField = new TextField();
+        numOfDiscsLabel.setMaxWidth(200);
         GridPane.setConstraints(numOfDiscsField, 1, 1);
+
+        Label inputFilePathLabel = new Label("Input File Path:");
+        GridPane.setConstraints(inputFilePathLabel, 0, 2);
+        inputFilePathField = new TextField();
+        inputFilePathField.setMinWidth(300);
+        inputFilePathField.setPromptText("Enter file path from resource folder");
+        GridPane.setConstraints(inputFilePathField, 1, 2);
+
+        Label outputFilePathLabel = new Label("Output File Path:");
+        GridPane.setConstraints(outputFilePathLabel, 0, 3);
+        outputFilePathField = new TextField();
+        outputFilePathField.setMinWidth(300);
+        outputFilePathField.setPromptText("Enter file path from resource folder");
+        GridPane.setConstraints(outputFilePathField, 1, 3);
 
         Button saveDataButton = new Button("Save Data to Discs");
         saveDataButton.setStyle("-fx-background-color: #4CAF50; -fx-text-fill: white;");
         saveDataButton.setOnAction(e -> saveDataToDiscs());
-        GridPane.setConstraints(saveDataButton, 1, 2);
+        GridPane.setConstraints(saveDataButton, 1, 4);
 
         Button readDataButton = new Button("Read Data from Discs");
         readDataButton.setStyle("-fx-background-color: #2196F3; -fx-text-fill: white;");
         readDataButton.setOnAction(e -> readDataFromDiscs());
-        GridPane.setConstraints(readDataButton, 1, 3);
+        GridPane.setConstraints(readDataButton, 1, 5);
 
         discContainer = new VBox(15);
-        GridPane.setConstraints(discContainer, 0, 4, 2, 1);
+        GridPane.setConstraints(discContainer, 0, 6, 2, 1);
 
-        grid.getChildren().addAll(inputDataLabel, inputDataField, numOfDiscsLabel, numOfDiscsField, saveDataButton, readDataButton, discContainer);
+        grid.getChildren().addAll(inputDataLabel, inputDataField, numOfDiscsLabel,
+                numOfDiscsField, inputFilePathLabel, inputFilePathField, outputFilePathLabel, outputFilePathField, saveDataButton, readDataButton, discContainer);
 
         Scene scene = new Scene(grid, 1000, 800);
         primaryStage.setScene(scene);
@@ -73,7 +95,27 @@ public class RAID5App extends Application {
 
     private void saveDataToDiscs() {
         String inputData = inputDataField.getText();
+        String inputFilePath = getResourceAbsolutePath(inputFilePathField.getText());
         String numOfDiscs = numOfDiscsField.getText();
+
+        if(inputFilePath!=null){
+            if(!inputFilePathField.getText().isEmpty()){
+                // if bad file format
+                if (isFilePath(inputFilePath)) {
+                    try {
+                        inputData = new String(Files.readAllBytes(Paths.get(inputFilePath)));
+                        inputDataField.setText(inputData);
+                    } catch (IOException e) {
+                        showErrorMessage("Error reading input file.");
+                        return;
+                    }
+                }else{
+                    showErrorMessage("Invalid input file path. Please enter a valid path that ends in '.txt'.");
+                    clearTextField(inputFilePathField);
+                }
+            }
+        }
+        // if empty then don't check the file
 
         if (!isValidBinary(inputData)) {
             showErrorMessage("Invalid input data. Please enter binary values (0 or 1) only.");
@@ -93,7 +135,7 @@ public class RAID5App extends Application {
         listOfDiscs = Cluster.createDiscList(disc);
         Cluster.saveData(bitList, listOfDiscs);
 
-        updateDiscDisplay("Destroy Data");
+        updateDiscDisplay("Destroy Data",-1);
     }
 
     private HBox createDiscBox(List<Bit> discData) {
@@ -114,19 +156,23 @@ public class RAID5App extends Application {
         if (btnText.equals("Destroy Data")) {
             Cluster.simulateDamage(new Disc(discIndex), listOfDiscs);
             button.setText("Restore Data");
+            btnText = button.getText();
         } else {
             List<Bit> restoredData = Cluster.recoverData(listOfDiscs, discIndex, inputDataField.getText().length());
             listOfDiscs.set(discIndex, restoredData);
             button.setText("Destroy Data");
+            btnText = button.getText();
         }
-        updateDiscDisplay(button.getText());
+        updateDiscDisplay(btnText, discIndex);
     }
 
-    private void updateDiscDisplay(String btnText) {
+    private void updateDiscDisplay(String btnText, int toggleIndex) {
         discContainer.getChildren().clear();
         for (int i = 0; i < listOfDiscs.size(); i++) {
             HBox discBox = createDiscBox(listOfDiscs.get(i));
-            Button destroyRestoreButton = new Button(btnText);
+            Button destroyRestoreButton = new Button("Destroy Data");
+            if(i==toggleIndex)
+                destroyRestoreButton.setText(btnText);
             destroyRestoreButton.setStyle("-fx-background-color: #f44336; -fx-text-fill: white;");
             int discIndex = i;
             destroyRestoreButton.setOnAction(e -> toggleDiscData(discIndex, destroyRestoreButton));
@@ -136,13 +182,41 @@ public class RAID5App extends Application {
         }
     }
 
+
     private void readDataFromDiscs() {
+        if(listOfDiscs==null){
+            showErrorMessage("No data to read from.");
+            return;
+        }
         List<Bit> recoveredData = Cluster.readData(listOfDiscs, inputDataField.getText().length());
         StringBuilder dataString = new StringBuilder();
         for (Bit bit : recoveredData) {
             dataString.append(bit.getBit() ? "1" : "0");
         }
-        new AlertBox().display("Recovered Data", dataString.toString());
+        String outputFilePath = getResourceAbsolutePath(outputFilePathField.getText());
+        String savedDataMessage = "";
+        if(outputFilePath!=null){
+            if (isFilePath(outputFilePath)) {
+                try {
+                    Path path = Paths.get(outputFilePath);
+                    if(!Files.exists(path)){
+                        Files.createFile(path);
+                    }
+                    Files.write(path, dataString.toString().getBytes());
+                    savedDataMessage = "\nSaved data to " + outputFilePath;
+                } catch (IOException e) {
+                    showErrorMessage("Error writing to output file.");
+                    return;
+                }
+            } else {
+                showErrorMessage("Invalid output file path. Please enter a valid path that ends in '.txt'.");
+                clearTextField(outputFilePathField);
+            }
+        }else{
+            showErrorMessage("incorrect file path provided. Please enter a valid file path.");
+            clearTextField(outputFilePathField);
+        }
+        new AlertBox().display("Recovered Data", dataString+ savedDataMessage);
     }
     private boolean isValidBinary(String input) {
         return input.matches("[01]+");
@@ -152,12 +226,36 @@ public class RAID5App extends Application {
         return input.matches("[2-6]");
     }
 
+    private boolean isFilePath(String input){
+        return input.endsWith(".txt");
+    }
+
     private void showErrorMessage(String message) {
         new AlertBox().display("Error", message);
     }
 
     private void clearTextField(TextField textField) {
         textField.setText("");
+    }
+
+    public static String getResourceAbsolutePath(String resourceName) {
+        // Get the class loader for this class
+        ClassLoader classLoader = RAID5App.class.getClassLoader();
+
+        // Get the URL of the resource
+        java.net.URL resourceUrl = classLoader.getResource(resourceName);
+
+        // Convert URL to Path and then to absolute path
+        Path resourcePath = null;
+        try {
+            if (resourceUrl != null) {
+                resourcePath = Paths.get(resourceUrl.toURI());
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        return resourcePath != null ? resourcePath.toAbsolutePath().toString() : null;
     }
 }
 
@@ -182,5 +280,7 @@ class AlertBox {
         window.setScene(scene);
         window.showAndWait();
     }
+
+
 
 }
