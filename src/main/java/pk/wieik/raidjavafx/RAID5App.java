@@ -50,12 +50,14 @@ public class RAID5App extends Application {
         GridPane.setConstraints(inputDataLabel, 0, 0);
         inputDataField = new TextField();
         inputDataField.setMinWidth(300);
+        inputDataField.setPromptText("Enter binary input data here");
         GridPane.setConstraints(inputDataField, 1, 0);
 
         Label numOfDiscsLabel = new Label("Number of Discs:");
         GridPane.setConstraints(numOfDiscsLabel, 0, 1);
         numOfDiscsField = new TextField();
         numOfDiscsLabel.setMaxWidth(200);
+        numOfDiscsField.setPromptText("Enter num between 2 and 6");
         GridPane.setConstraints(numOfDiscsField, 1, 1);
 
         Label inputFilePathLabel = new Label("Input File Path:");
@@ -114,11 +116,14 @@ public class RAID5App extends Application {
                     clearTextField(inputFilePathField);
                 }
             }
+        }else{
+            showErrorMessage("File not found. Reading from user input");
+            clearTextField(inputFilePathField);
         }
         // if empty then don't check the file
 
         if (!isValidBinary(inputData)) {
-            showErrorMessage("Invalid input data. Please enter binary values (0 or 1) only.");
+            showErrorMessage("Invalid input data. Please enter binary values (0 or 1) only. Remember that binary input must start with 1");
             clearTextField(inputDataField);
             return;
         }
@@ -153,6 +158,17 @@ public class RAID5App extends Application {
 
     private void toggleDiscData(int discIndex, Button button) {
         String btnText = button.getText();
+
+        // Check if any disc is already in "Restore Data" state
+        for (int i = 0; i < discContainer.getChildren().size(); i++) {
+            VBox discWithButton = (VBox) discContainer.getChildren().get(i);
+            Button destroyRestoreButton = (Button) discWithButton.getChildren().get(1);
+            if (destroyRestoreButton.getText().equals("Restore Data") && discIndex!=i) {
+                showErrorMessage("Cannot destroy another disc while one disc is in 'Restore Data' state.");
+                return;
+            }
+        }
+
         if (btnText.equals("Destroy Data")) {
             Cluster.simulateDamage(new Disc(discIndex), listOfDiscs);
             button.setText("Restore Data");
@@ -183,26 +199,45 @@ public class RAID5App extends Application {
     }
 
 
+
     private void readDataFromDiscs() {
-        if(listOfDiscs==null){
+        if (listOfDiscs == null) {
             showErrorMessage("No data to read from.");
             return;
         }
+
+        // Recover the data
         List<Bit> recoveredData = Cluster.readData(listOfDiscs, inputDataField.getText().length());
         StringBuilder dataString = new StringBuilder();
         for (Bit bit : recoveredData) {
             dataString.append(bit.getBit() ? "1" : "0");
         }
+
+        // Create a message with all partitioned data
+        StringBuilder partitionedDataMessage = new StringBuilder();
+        for (int i = 0; i < listOfDiscs.size(); i++) {
+            List<Bit> discData = listOfDiscs.get(i);
+            StringBuilder discDataString = new StringBuilder();
+            for (Bit bit : discData) {
+                discDataString.append(bit.getBit() ? "1" : "0");
+            }
+            partitionedDataMessage.append("Disc ").append(i + 1).append(" - ").append(discDataString).append("\n");
+        }
+
+        // Combine recovered data with partitioned data message
+        String outputContent = dataString.toString() + "\n\n" + partitionedDataMessage.toString();
+
+        // Get the output file path
         String outputFilePath = getResourceAbsolutePath(outputFilePathField.getText());
         String savedDataMessage = "";
-        if(outputFilePath!=null){
+        if (outputFilePath != null) {
             if (isFilePath(outputFilePath)) {
                 try {
                     Path path = Paths.get(outputFilePath);
-                    if(!Files.exists(path)){
+                    if (!Files.exists(path)) {
                         Files.createFile(path);
                     }
-                    Files.write(path, dataString.toString().getBytes());
+                    Files.write(path, outputContent.getBytes());
                     savedDataMessage = "\nSaved data to " + outputFilePath;
                 } catch (IOException e) {
                     showErrorMessage("Error writing to output file.");
@@ -212,14 +247,16 @@ public class RAID5App extends Application {
                 showErrorMessage("Invalid output file path. Please enter a valid path that ends in '.txt'.");
                 clearTextField(outputFilePathField);
             }
-        }else{
-            showErrorMessage("incorrect file path provided. Please enter a valid file path.");
+        } else {
+            showErrorMessage("Incorrect file path provided. Please enter a valid file path.");
             clearTextField(outputFilePathField);
         }
-        new AlertBox().display("Recovered Data", dataString+ savedDataMessage);
+
+        new AlertBox().display("Recovered Data", dataString + savedDataMessage);
     }
+
     private boolean isValidBinary(String input) {
-        return input.matches("[01]+");
+        return input.matches("1[01]+");
     }
 
     private boolean isValidInteger(String input) {
